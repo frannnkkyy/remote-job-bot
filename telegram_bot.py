@@ -56,11 +56,22 @@ def format_job(job: dict[str, Any], score: int, reasons: list[str]) -> str:
 
 def send_job(job: dict[str, Any], score: int, reasons: list[str]) -> bool:
     """Send one job; return True only after Telegram confirms success."""
+    return send_message(format_job(job, score, reasons), parse_mode="HTML")
+
+
+def send_message(text: str, parse_mode: str | None = None) -> bool:
+    """Send a text message through the configured Telegram bot."""
     token, chat_id = validate_config()
-    response = requests.post(
-        f"{TELEGRAM_API}/bot{token}/sendMessage",
-        json={"chat_id": chat_id, "text": format_job(job, score, reasons), "parse_mode": "HTML", "disable_web_page_preview": True},
-        timeout=TIMEOUT,
-    )
-    response.raise_for_status()
-    return bool(response.json().get("ok"))
+    payload: dict[str, Any] = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    try:
+        response = requests.post(
+            f"{TELEGRAM_API}/bot{token}/sendMessage",
+            json=payload,
+            timeout=TIMEOUT,
+        )
+        response.raise_for_status()
+        return bool(response.json().get("ok"))
+    except requests.RequestException:
+        raise RuntimeError("Telegram API request failed") from None

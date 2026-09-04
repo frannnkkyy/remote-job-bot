@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import re
 from collections import Counter
 
@@ -12,11 +13,12 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from filters import MIN_SCORE, JobAssessment, assess_job, clean_html
 from sources import SOURCES
 from sources.email_alerts import fetch_jobs as fetch_email_alert_jobs
-from telegram_bot import send_job, validate_config
+from telegram_bot import send_job, send_message, validate_config
 
 
 BASE_DIR = Path(__file__).resolve().parent
 SEEN_JOBS_PATH = BASE_DIR / "data" / "seen_jobs.json"
+MANUAL_TEST_MESSAGE = "🤖 Remote Job Bot activo\n✅ GitHub Actions funcionando\n🔎 Buscando nuevas vacantes..."
 
 
 # ============================================================
@@ -412,6 +414,14 @@ def main() -> None:
 
     # Check Telegram configuration first.
     validate_config()
+
+    if os.getenv("MANUAL_RUN", "").strip().lower() == "true":
+        print("[Telegram Test] manual run detected")
+        if not send_message(MANUAL_TEST_MESSAGE):
+            raise RuntimeError("[Telegram Test] Telegram did not accept the test message")
+        print("[Telegram Test] test message sent")
+    else:
+        print("[Telegram Test] skipped (scheduled run)")
 
     seen = load_seen_jobs()
 

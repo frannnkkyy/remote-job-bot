@@ -1,5 +1,8 @@
 """Pipeline, canonical URL, and cross-source deduplication tests."""
+import os
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from unittest.mock import patch
 import main
 
@@ -35,6 +38,39 @@ class MainTests(unittest.TestCase):
             raise RuntimeError("offline")
         with patch.object(main, "ALL_SOURCES", [("Bad", failed), ("Good", lambda: [sample("Good", "https://example.com/1")])]):
             self.assertEqual(len(main.fetch_all_jobs()), 1)
+
+    def _run_empty_cycle(self, environment: dict[str, str]):
+        seen = {"existing-job"}
+        with patch.dict(os.environ, environment, clear=True), \
+             patch.object(main, "validate_config"), \
+             patch.object(main, "send_message", return_value=True) as send_message, \
+             patch.object(main, "load_seen_jobs", return_value=seen), \
+             patch.object(main, "fetch_all_jobs", return_value=[]) as fetch_all_jobs, \
+             patch.object(main, "save_seen_jobs") as save_seen_jobs, \
+             redirect_stdout(StringIO()):
+            main.main()
+        return send_message, fetch_all_jobs, save_seen_jobs, seen
+
+    def test_manual_run_sends_test_message(self) -> None:
+        send_message, _, _, _ = self._run_empty_cycle({"MANUAL_RUN": "true"})
+        send_message.assert_called_once_with(main.MANUAL_TEST_MESSAGE)
+
+    def test_false_manual_run_does_not_send_test_message(self) -> None:
+        send_message, _, _, _ = self._run_empty_cycle({"MANUAL_RUN": "false"})
+        send_message.assert_not_called()
+
+    def test_missing_manual_run_does_not_send_test_message(self) -> None:
+        send_message, _, _, _ = self._run_empty_cycle({})
+        send_message.assert_not_called()
+
+    def test_normal_search_still_runs_after_manual_message(self) -> None:
+        _, fetch_all_jobs, _, _ = self._run_empty_cycle({"MANUAL_RUN": "true"})
+        fetch_all_jobs.assert_called_once_with()
+
+    def test_manual_message_does_not_change_seen_jobs(self) -> None:
+        _, _, save_seen_jobs, seen = self._run_empty_cycle({"MANUAL_RUN": "true"})
+        save_seen_jobs.assert_not_called()
+        self.assertEqual(seen, {"existing-job"})
 
 if __name__ == "__main__":
     unittest.main()
